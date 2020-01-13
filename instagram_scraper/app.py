@@ -434,6 +434,9 @@ class InstagramScraper(object):
 
     def scrape_location(self):
         self.__scrape_query(self.query_location_gen)
+        
+    def my_scrape_location(self):
+        self.__my_scrape_query(self.query_location_gen)
 
     def worker_wrapper(self, fn, *args, **kwargs):
         try:
@@ -506,6 +509,77 @@ class InstagramScraper(object):
                         self.save_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
         finally:
             self.quit = True
+            
+
+    def __my_scrape_query(self, media_generator, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS)):
+        """Scrapes the specified value for posted media."""
+        self.quit = False
+        try:
+            for value in self.usernames:
+                self.posts = []
+                self.last_scraped_filemtime = 0
+                greatest_timestamp = 0
+                future_to_item = {}
+
+                dst = self.get_dst_dir(value)
+
+                if self.include_location:
+                    media_exec = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+
+                iter = 0
+                for item in tqdm.tqdm(media_generator(value), desc='Searching {0} for posts'.format(value), unit=" media",
+                                      disable=self.quiet):
+
+                    with open('{0}/{1}.json'.format(dst, item['shortcode']), 'w') as f:
+                        json.dump(item, f)
+                        
+                    #if ((item['is_video'] is False and 'image' in self.media_types) or \
+                    #            (item['is_video'] is True and 'video' in self.media_types)
+                    #    ) and self.is_new_media(item):
+                    if (item['is_video'] is False and 'image' in self.media_types) \
+                         and self.is_new_media(item):
+                        future = executor.submit(self.worker_wrapper, self.download, item, dst)
+                        future_to_item[future] = item
+
+                    if self.include_location and 'location' not in item:
+                        media_exec.submit(self.worker_wrapper, self.__get_location, item)
+
+                    if self.comments:
+                        item['edge_media_to_comment']['data'] = list(self.query_comments_gen(item['shortcode']))
+
+                    if self.media_metadata or self.comments or self.include_location:
+                        self.posts.append(item)
+
+                    iter = iter + 1
+                    if self.maximum != 0 and iter >= self.maximum:
+                        break
+
+                if future_to_item:
+                    for future in tqdm.tqdm(concurrent.futures.as_completed(future_to_item),
+                                            total=len(future_to_item),
+                                            desc='Downloading', disable=self.quiet):
+                        item = future_to_item[future]
+
+                        if future.exception() is not None:
+                            self.logger.warning(
+                                'Media for {0} at {1} generated an exception: {2}'.format(value, item['urls'],
+                                                                                          future.exception()))
+                        else:
+                            timestamp = self.__get_timestamp(item)
+                            if timestamp > greatest_timestamp:
+                                greatest_timestamp = timestamp
+                # Even bother saving it?
+                if greatest_timestamp > self.last_scraped_filemtime:
+                    self.set_last_scraped_timestamp(value, greatest_timestamp)
+
+                #if (self.media_metadata or self.comments or self.include_location) and self.posts:
+                if self.latest:
+                    self.merge_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
+                else:
+                    self.save_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
+        finally:
+            self.quit = True
+
 
     def query_hashtag_gen(self, hashtag):
         return self.__query_gen(QUERY_HASHTAG, QUERY_HASHTAG_VARS, 'hashtag', hashtag)
