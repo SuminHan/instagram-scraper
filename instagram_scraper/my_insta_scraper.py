@@ -635,6 +635,7 @@ class InstagramScraper(object):
                 if self.include_location:
                     media_exec = concurrent.futures.ThreadPoolExecutor(max_workers=5)
                     
+                iter = 0
                 for item in tqdm.tqdm(media_generator(value), desc='Searching {0} for posts'.format(value), unit=" media",
                                       disable=self.quiet):
 
@@ -642,7 +643,7 @@ class InstagramScraper(object):
                         os.mkdir(dst)
                     with open('{0}/{1}.json'.format(dst, item['shortcode']), 'w') as f:
                         json.dump(item, f)
-                        
+
                     iter = iter + 1
                     if self.maximum != 0 and iter >= self.maximum:
                         break
