@@ -29,10 +29,43 @@ import concurrent.futures
 import requests
 import tqdm
 
-#from instagram_scraper.constants import *
-from constants import *
+BASE_URL = 'https://www.instagram.com/'
+LOGIN_URL = BASE_URL + 'accounts/login/ajax/'
+LOGOUT_URL = BASE_URL + 'accounts/logout/'
+CHROME_WIN_UA = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36'
+USER_URL = BASE_URL + '{0}/?__a=1'
+USER_INFO = 'https://i.instagram.com/api/v1/users/{0}/info/'
 
+STORIES_URL = BASE_URL + 'graphql/query/?query_hash=45246d3fe16ccc6577e0bd297a5db1ab&variables=%7B%22reel_ids%22%3A%5B%22{0}%22%5D%2C%22tag_names%22%3A%5B%5D%2C%22location_ids%22%3A%5B%5D%2C%22highlight_reel_ids%22%3A%5B%5D%2C%22precomposed_overlay%22%3Afalse%7D'
+STORIES_UA = 'Instagram 52.0.0.8.83 (iPhone; CPU iPhone OS 11_4 like Mac OS X; en_US; en-US; scale=2.00; 750x1334) AppleWebKit/605.1.15'
 
+TAGS_URL = BASE_URL + 'explore/tags/{0}/?__a=1'
+LOCATIONS_URL = BASE_URL + 'explore/locations/{0}/?__a=1'
+VIEW_MEDIA_URL = BASE_URL + 'p/{0}/?__a=1'
+SEARCH_URL = BASE_URL + 'web/search/topsearch/?context=blended&query={0}'
+
+QUERY_FOLLOWINGS = BASE_URL + 'graphql/query/?query_hash=c56ee0ae1f89cdbd1c89e2bc6b8f3d18&variables={0}'
+QUERY_FOLLOWINGS_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
+
+QUERY_COMMENTS = BASE_URL + 'graphql/query/?query_hash=33ba35852cb50da46f5b5e889df7d159&variables={0}'
+QUERY_COMMENTS_VARS = '{{"shortcode":"{0}","first":50,"after":"{1}"}}'
+
+QUERY_HASHTAG = BASE_URL + 'graphql/query/?query_hash=ded47faa9a1aaded10161a2ff32abb6b&variables={0}'
+QUERY_HASHTAG_VARS = '{{"tag_name":"{0}","first":50,"after":"{1}"}}'
+
+QUERY_LOCATION = BASE_URL + 'graphql/query/?query_hash=ac38b90f0f3981c42092016a37c59bf7&variables={0}'
+QUERY_LOCATION_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
+
+QUERY_MEDIA = BASE_URL + 'graphql/query/?query_hash=42323d64886122307be10013ad2dcc44&variables={0}'
+QUERY_MEDIA_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
+
+MAX_CONCURRENT_DOWNLOADS = 5
+CONNECT_TIMEOUT = 90
+MAX_RETRIES = 5
+RETRY_DELAY = 5
+MAX_RETRY_DELAY = 60
+
+LATEST_STAMPS_USER_SECTION = 'users'
 
 
 try:
@@ -440,6 +473,9 @@ class InstagramScraper(object):
     def my_scrape_location(self):
         self.__my_scrape_query(self.query_location_gen)
 
+    def my_scrape_no_download_location(self):
+        self.__my_scrape_no_query(self.query_location_gen)
+
     def worker_wrapper(self, fn, *args, **kwargs):
         try:
             if self.quit:
@@ -581,6 +617,35 @@ class InstagramScraper(object):
                     self.merge_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
                 else:
                     self.save_json({ 'GraphImages': self.posts }, '{0}/{1}.json'.format(dst, value))
+        finally:
+            self.quit = True
+
+    def __my_scrape_no_query(self, media_generator, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS)):
+        """Scrapes the specified value for posted media."""
+        self.quit = False
+        try:
+            for value in self.usernames:
+                self.posts = []
+                self.last_scraped_filemtime = 0
+                greatest_timestamp = 0
+                future_to_item = {}
+
+                dst = self.get_dst_dir(value)
+
+                if self.include_location:
+                    media_exec = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+                    
+                for item in tqdm.tqdm(media_generator(value), desc='Searching {0} for posts'.format(value), unit=" media",
+                                      disable=self.quiet):
+
+                    if not os.path.isdir(dst):
+                        os.mkdir(dst)
+                    with open('{0}/{1}.json'.format(dst, item['shortcode']), 'w') as f:
+                        json.dump(item, f)
+                        
+                    iter = iter + 1
+                    if self.maximum != 0 and iter >= self.maximum:
+                        break
         finally:
             self.quit = True
 

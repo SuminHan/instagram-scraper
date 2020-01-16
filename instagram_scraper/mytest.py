@@ -1,5 +1,5 @@
 #%%
-from app import InstagramScraper
+from my_insta_scraper import InstagramScraper
 
 #%%
 v = InstagramScraper()
@@ -22,8 +22,11 @@ v = InstagramScraper()
    
 
 #v.usernames = ['217847758965661']
-v.usernames = ['22642832']
+v.usernames = ['367835']
 
-a = v.my_scrape_location()
+a = v.my_scrape_no_download_location()
+
+# %%
+import os
 
 # %%
